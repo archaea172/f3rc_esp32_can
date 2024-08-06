@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -40,15 +41,17 @@ FDCAN_TxHeaderTypeDef TxHeader;
 FDCAN_RxHeaderTypeDef RxHeader;
 FDCAN_FilterTypeDef sFilterConfig;
 
-uint8_t TxData[8] = {};
+uint8_t TxData1[8] = {};
+uint8_t TxData2[8]={};
 uint8_t RxData[8] = {};
 uint32_t TxMailbox;
 
-uint8_t buffer[2] = {};
-uint8_t size = 2;
-int16_t vel_x = 0;
-int16_t vel_y = 0;
-uint16_t vel_CANID = 0x300;
+uint8_t buffer[1] = {};
+uint8_t size = 1;
+int8_t datapos=-1;
+uint8_t data[9];
+uint16_t FIRSTCANID = 0x300;
+uint16_t SECONDCANID = 0x301;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -75,29 +78,20 @@ static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN 0 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	uint8_t id, txdata;
 
-	id = buffer[0];
-	txdata = buffer[1];
-/*	for (int i=0;i<2;i++){
-		printf("%c ", buffer[i]);
-	}*/
+    if(buffer[0] == 0xff){
+    	datapos=0;
+    }else if(datapos>=0){
+        data[datapos++]=buffer[0];
+    }
+    if(datapos>=9){
+    	memcpy(TxData1,data,8);
+    	TxData2[0]= data[8];
+        datapos=-1;
+    }
 
 
-	if((uint8_t)id == 0x58){
-		vel_x = (uint8_t)(txdata - 0x30);
-		if (vel_x >= 5){
-			vel_x -=9;
-		}
-	}
-	if((uint8_t)id == 0x59){
-		vel_y = (uint8_t)(txdata - 0x30);
-		if (vel_y >= 5){
-			vel_y -=9;
-		}
-	}
-	TxData[0] = (uint8_t)vel_x;
-	TxData[1] = (uint8_t)vel_y;
+
 
 	HAL_UART_Receive_IT(&huart1, buffer, size);
 }
@@ -105,6 +99,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart){
 	printf("uart_error\r\n");
 	HAL_UART_Abort(huart);
 	HAL_UART_Receive_IT(&huart1, buffer, size);
+	datapos=-1;
 }
 
 void FDCAN_RxTxSettings(void){
@@ -116,7 +111,7 @@ void FDCAN_RxTxSettings(void){
 	FDCAN_Filter_settings.FilterID1 = 0x200;
 	FDCAN_Filter_settings.FilterID2 = 0x310;
 
-	TxHeader.Identifier = vel_CANID;
+	TxHeader.Identifier = FIRSTCANID;
 	TxHeader.IdType = FDCAN_STANDARD_ID;
 	TxHeader.TxFrameType = FDCAN_DATA_FRAME;
 	TxHeader.DataLength = FDCAN_DLC_BYTES_8;
@@ -147,6 +142,7 @@ void FDCAN_RxTxSettings(void){
 		Error_Handler();
 	}
 }
+
 
 
 int _write(int file, char *ptr, int len)
@@ -201,11 +197,16 @@ int main(void)
   HAL_UART_Receive_IT(&huart1, buffer, size);
   while (1)
   {
-	  printf("(%d,%d)\r\n", vel_x, vel_y);
-
-	  if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData) != HAL_OK){
-		  printf("addmessage is error\r\n");
+	  printf("(%d,%d)\r\n",(int8_t)TxData1[0], (int8_t)TxData1[1]);
+	  TxHeader.Identifier = FIRSTCANID;
+	  if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData1) != HAL_OK){
+		  printf("addmessage1 is error\r\n");
 		  Error_Handler();
+	  }
+	  TxHeader.Identifier = SECONDCANID;
+	  if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData2) != HAL_OK){
+	      printf("addmessage2 is error\r\n");
+	  	  Error_Handler();
 	  }
 	  HAL_Delay(1);
     /* USER CODE END WHILE */
